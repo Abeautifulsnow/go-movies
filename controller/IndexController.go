@@ -76,6 +76,8 @@ func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 	NewFilm := services.MovieListsRange(NewFilmKey, 0, 49)
 	NewTV := services.MovieListsRange(NewTVKey, 0, 49)
+	recommend := services.MoviesRecommend()
+	show["recommend"] = recommend
 
 	show["categories"] = Categories
 	show["page"] = "页面"
@@ -88,6 +90,7 @@ func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	show["next_status"] = nextStatus
 	show["nav_link"] = navLink
 	show["film_title"] = ""
+
 
 	buffer := new(bytes.Buffer)
 	heroTpl.Index(show, buffer)
@@ -119,6 +122,8 @@ func Movie(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 	NewFilm := services.MovieListsRange(NewFilmKey, 0, 49)
 	NewTV := services.MovieListsRange(NewTVKey, 0, 49)
+	recommend := services.MoviesRecommend()
+	show["recommend"] = recommend
 
 	show["categories"] = Categories
 	show["MovieDetail"] = MovieDetail
@@ -170,11 +175,11 @@ func Search(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		q = _q[0]
 	}
 
-	if q == "" {
-		q = "[]"
-	}
+	var MovieLists []services.MovieListStruct
 
-	MovieLists := services.SearchMovies(q)
+	if strings.TrimSpace(q) != "" {
+		MovieLists = services.SearchMovies(q)
+	}
 
 	// 所有类别/导航
 	Categories := services.AllCategoryDate()
@@ -184,7 +189,8 @@ func Search(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 	NewFilm := services.MovieListsRange(NewFilmKey, 0, 49)
 	NewTV := services.MovieListsRange(NewTVKey, 0, 49)
-
+	recommend := services.MoviesRecommend()
+	show["recommend"] = recommend
 	show["movieLists"] = MovieLists
 	show["categories"] = Categories
 	show["new_film"] = NewFilm

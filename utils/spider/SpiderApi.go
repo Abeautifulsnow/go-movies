@@ -90,26 +90,6 @@ func (spiderApi *SpiderApi) PageDetail(id string) {
 	go Detail(id, 0)
 }
 
-// 初始化 fasthttp GET 的请求与响应
-// @deprecated
-func initFastHttp() FastHttp {
-	req := fasthttp.AcquireRequest()
-	resp := fasthttp.AcquireResponse()
-	defer func() {
-		// 用完需要释放资源
-		fasthttp.ReleaseResponse(resp)
-		fasthttp.ReleaseRequest(req)
-	}()
-
-	req.Header.SetMethod("GET")
-
-	// 不验证https证书 todo 这里根据实际情况是否选择
-	//f := fasthttp.Client{TLSConfig: &tls.Config{InsecureSkipVerify: true}}
-	f := fasthttp.Client{}
-
-	return FastHttp{f: f, req: req, resp: resp}
-}
-
 func StartApi() {
 	allMoviesDoneKeyExists := utils.RedisDB.Exists("all_movies_done").Val()
 	if allMoviesDoneKeyExists > 0 {
@@ -159,7 +139,8 @@ func list(pg int) {
 	go DelAllListCacheKey()
 
 	// 全量 done -> set done 永久Redis 标识 -> new corntab every min ( done key exist && recent_update_key expire ) -> set recent_update_key 1h expire -> do recent 3h update
-	utils.RedisDB.SetNX("all_movies_done","done", 0)
+	// 一周进行一次全量爬取，资源网站的电影ID是会变的，fuck!!!
+	utils.RedisDB.SetNX("all_movies_done","done", time.Second*604800)
 
 	// 钉钉通知
 	SendDingMsg("本次爬虫执行时间为：" + ExecSecondsS + "秒 \n 即" + ExecMinutesS + "分钟 \n 即" + ExecHoursS + "小时 \n " + runtime.GOOS)
@@ -204,6 +185,7 @@ func actionRecentUpdateList() {
 			//return
 			url := ApiHost + "?h=3" + "&pg=" + strconv.Itoa(j)
 			req := fasthttp.AcquireRequest()
+			req.SetConnectionClose()
 			resp := fasthttp.AcquireResponse()
 			defer func() {
 				// 用完需要释放资源
@@ -260,6 +242,8 @@ func actionRecentUpdateList() {
 							Score:  float64(stamp1.Unix()),
 							Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 						})
+						// 获取详情
+						Detail(strconv.Itoa(value.VodId), 0)
 					}
 
 					if inType(value.TypeId, tv) {
@@ -267,6 +251,8 @@ func actionRecentUpdateList() {
 							Score:  float64(stamp1.Unix()),
 							Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 						})
+						// 获取详情
+						Detail(strconv.Itoa(value.VodId), 0)
 					}
 
 					if inType(value.TypeId, cartoon) {
@@ -274,18 +260,22 @@ func actionRecentUpdateList() {
 							Score:  float64(stamp1.Unix()),
 							Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 						})
+						// 获取详情
+						Detail(strconv.Itoa(value.VodId), 0)
 					}
-					// 获取详情
-					Detail(strconv.Itoa(value.VodId), 0)
 				}
 			}
 		}
 
 		// 提交任务
-		antPool.Submit(func() {
+		submitErr := antPool.Submit(func() {
 			task()
 			wg.Done()
 		})
+
+		if submitErr != nil{
+			log.Println("antPool submitErr：",submitErr)
+		}
 	}
 	wg.Wait()
 	//log.Println("all actionRecentUpdateList done")
@@ -295,6 +285,7 @@ func RecentUpdatePageCount() int {
 	url := ApiHost + "?h=3&pg=1"
 
 	req := fasthttp.AcquireRequest()
+	req.SetConnectionClose()
 	resp := fasthttp.AcquireResponse()
 	defer func() {
 		// 用完需要释放资源
@@ -331,24 +322,22 @@ func RecentUpdatePageCount() int {
 
 func actionList(subCategoryId string, pg int, pageCount int) {
 	//return
+	req := fasthttp.AcquireRequest()
+	req.SetConnectionClose()
+	resp := fasthttp.AcquireResponse()
+	defer func() {
+		// 用完需要释放资源
+		fasthttp.ReleaseResponse(resp)
+		fasthttp.ReleaseRequest(req)
+	}()
+
+	req.Header.SetMethod("GET")
+	RandomUserAgent := RandomUserAgent()
+	req.Header.SetBytesKV([]byte("User-Agent"), []byte(RandomUserAgent))
+
 	for j := pg; j <= pageCount; j++ {
-
 		url := ApiHost + "?ac=" + AcList + "&t=" + subCategoryId + "&pg=" + strconv.Itoa(j)
-		req := fasthttp.AcquireRequest()
-		resp := fasthttp.AcquireResponse()
-		defer func() {
-			// 用完需要释放资源
-			fasthttp.ReleaseResponse(resp)
-			fasthttp.ReleaseRequest(req)
-		}()
-
-		req.Header.SetMethod("GET")
-
 		log.Println("当前page"+strconv.Itoa(j), url, pageCount)
-
-		RandomUserAgent := RandomUserAgent()
-		req.Header.SetBytesKV([]byte("User-Agent"), []byte(RandomUserAgent))
-
 		req.SetRequestURI(url)
 
 		if err := fasthttp.Do(req, resp); err != nil {
@@ -383,6 +372,8 @@ func actionList(subCategoryId string, pg int, pageCount int) {
 					Score:  float64(stamp1.Unix()),
 					Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 				})
+				// 获取详情
+				Detail(strconv.Itoa(value.VodId), 0)
 			}
 
 			if inType(value.TypeId, tv) {
@@ -390,6 +381,8 @@ func actionList(subCategoryId string, pg int, pageCount int) {
 					Score:  float64(stamp1.Unix()),
 					Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 				})
+				// 获取详情
+				Detail(strconv.Itoa(value.VodId), 0)
 			}
 
 			if inType(value.TypeId, cartoon) {
@@ -397,20 +390,18 @@ func actionList(subCategoryId string, pg int, pageCount int) {
 					Score:  float64(stamp1.Unix()),
 					Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 				})
+				// 获取详情
+				Detail(strconv.Itoa(value.VodId), 0)
 			}
-
-			// 获取详情
-			Detail(strconv.Itoa(value.VodId), 0)
-
 		}
 	}
-
 }
 
 func pageCount(subCategoryId string) (int, string) {
 	url := ApiHost + "?ac=" + AcList + "&t=" + subCategoryId + "&pg=1"
 
 	req := fasthttp.AcquireRequest()
+	req.SetConnectionClose()
 	resp := fasthttp.AcquireResponse()
 	defer func() {
 		// 用完需要释放资源
@@ -419,7 +410,6 @@ func pageCount(subCategoryId string) (int, string) {
 	}()
 
 	req.Header.SetMethod("GET")
-
 	RandomUserAgent := RandomUserAgent()
 	req.Header.SetBytesKV([]byte("User-Agent"), []byte(RandomUserAgent))
 
@@ -456,6 +446,7 @@ func Detail(id string, retry int) {
 	}
 
 	req := fasthttp.AcquireRequest()
+	req.SetConnectionClose()
 	resp := fasthttp.AcquireResponse()
 	defer func() {
 		// 用完需要释放资源
@@ -464,7 +455,6 @@ func Detail(id string, retry int) {
 	}()
 
 	req.Header.SetMethod("GET")
-
 	RandomUserAgent := RandomUserAgent()
 	req.Header.SetBytesKV([]byte("User-Agent"), []byte(RandomUserAgent))
 
