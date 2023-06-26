@@ -1,25 +1,42 @@
+推荐一波最近发现的很好用的一个全球代理：[SmartProxy](https://www.smartproxy.cn/regist?invite=Y8XF5N)
+代理IP池项目,主打1亿真实住宅IP资源，专业海外http代理商，千万级优质资源，覆盖全球城市，高匿稳定提供100%原生住宅IP，支持社交账户、电商平台、网络数据收集等服务。
+提供API和账密提取使用方式，动态和静态住宅代理均有，大部分是真人住宅IP，成功率杠杠的。
+付费套餐选择多样，现在春季价格很优惠，动态住宅代理只要65折！
+
+<div align=center>
+   <img src="https://user-images.githubusercontent.com/29977021/228770306-6c5d0b8a-c381-4be3-b500-e43fc47298b3.png" width="400px">
+</div>
+
+官网链接：[https://www.smartproxy.cn](https://www.smartproxy.cn/regist?invite=Y8XF5N)
+
+专属注册链接：[https://www.smartproxy.cn/regist](https://www.smartproxy.cn/regist?invite=Y8XF5N)
+
+<br>
+<br>
+<br>
+<br>
+<br>
+
+## GoMovies
+
 <p align="center">
-<img src="https://files.catbox.moe/rpdbb6.png">
+<img src="https://cdn.jsdelivr.net/gh/hezhizheng/static-image-hosting@main/image-hosting/20211124102659_GRITHQADFCQQUIUN.png">
 </p>
 
-> golang + redis 实现的影站(低级爬虫)。无管理后台，效果站：~~[https://go-movies.hzz.cool/](https://go-movies.hzz.cool/)~~ 支持手机端访问播放
-
-
-> https://go-movies.hzz.cool/ 这个域名被阿里云警告了，访问新演示地址 http://film.hzz.cool
+> golang + redis 实现的影站(低级爬虫)。无管理后台，效果站：[http://film.hzz.cool](http://film.hzz.cool) 支持手机端访问播放
 
 ## Github地址
 [https://github.com/hezhizheng/go-movies](https://github.com/hezhizheng/go-movies)
 
 ## features
-- 静态文件与go文件统一编译，运行只依赖编译后可执行的二进制文件与redis
+- 使用 Golang `embed` 内嵌静态资源(html、js、css等)，运行只依赖编译后可执行的二进制文件与redis
 - 支持docker启动方式
-- 暂时只支持API请求的形式(第三方源存在不稳定性)，config/app.go 或 app.json 为配置文件(PS:存在app.json文件则以app.json为准)
-- 简单影片分类、搜索的支持
+- 简单资源分类、搜索的支持
 - 内置自动爬虫、自动更新最新资源的定时任务，基本满足日常看片需求。
+- 钉钉机器人通知
 
 ## Tip
-- ~~由于目标网站会封锁直接通过网页爬虫的IP,在没有找到稳定IP池的情况下，推荐优先使用API版本（PS：网页爬虫版可用，但可能会被封IP）~~
-- 暂时只维护API请求版本 [API接口说明.txt](https://api.tiankongapi.com)，后续可能追加其他资源支持
+- 暂时只维护API请求版本 [API接口说明](https://help.tiankongapi.com/)，后续可能追加其他资源支持
 - API版本首次启动会全量请求并存储到redis，之后每小时定时爬取最近更新的影视资源
 
 ## 目录结构
@@ -27,11 +44,10 @@
 ```
 |-- Dockerfile
 |-- LICENSE.txt
-|-- app.json                                               #程序配置文件，优先级最高
-|-- config                                                 #程序配置文件，根目录下没有app.json文件则配置以app.go为准
-|   |-- app.go 
-|   `-- app.go.backup
-|-- controller                                             # controller层，基本的页面渲染
+|-- config
+|   |-- app.go
+|   `-- app.go.backup                        #程序配置文件
+|-- controller                               #controller层，基本的页面渲染
 |   |-- DebugController.go
 |   |-- IndexController.go
 |   `-- SpiderController.go
@@ -39,48 +55,47 @@
 |-- go.mod
 |-- go.sum
 |-- main.go
-|-- models                                                 # 定义一些redis查询的方法
+|-- models                                   # 定义一些redis查询的方法
 |   |-- Category.go
 |   |-- Movies.go
 |   `-- readme.md
 |-- readme.md
-|-- repository
-|   `-- readme.md
 |-- routes
 |   `-- route.go
-|-- services                                               # 普通业务处理类 
+|-- runner.conf                              # fresh 配置文件
+|-- services                                 # 普通业务处理类
 |   |-- CategoryService.go
 |   |-- MoviesService.go
 |   `-- readme.md
-|-- static                                                 # js、css、image等静态资源文件夹
-|-- statik                                                 # 静态资源嵌入编译，由命令生成
-|   `-- statik.go
-|-- utils                                                  # 一些工具类
-    |-- Cron.go
-    |-- Dingrobot.go
-    |-- Helper.go
-    |-- JsonUtil.go
-    |-- Pagination.go
-    |-- RedisUtil.go
-    |-- Spider.1go
-    |-- Spider.go                                          # 爬虫网页版主要功能代码
-    |-- SpiderTask.go
-    `-- spider                                             # 爬虫api版主要功能代码
-        |-- CategoriesStr.go
-        |-- SpiderApi.go
-        |-- SpiderTaskPolicy.go
-        |-- tian_kong
-        |   |-- CategoriesStr.go
-        |   `-- SpiderApi.go
-        |
-        `-- useragents.go
-`-- views                                                  # html模板目录
+|-- static2                                  # js、css、image等静态资源文件夹
+|-- utils                                    # 一些工具类
+|   |-- Cron.go
+|   |-- Dingrobot.go
+|   |-- Helper.go
+|   |-- JsonUtil.go
+|   |-- Pagination.go
+|   |-- RedisUtil.go
+|   |-- Spider.go
+|   |-- SpiderTask.go
+|   `-- spider                               # 爬虫api版主要功能代码
+|       |-- SpiderTaskPolicy.go
+|       `-- tian_kong
+|           |-- CategoriesStr.go
+|           `-- SpiderApi.go
+`-- views                                    # html模板目录
+    `-- tmpl
+        `-- temp_global_var.go               # 定义 embed 的全局变量跟一些模板调用的函数
 ```
 
 ## 首页效果
-![img](https://i.loli.net/2019/12/05/Qzqv4HWoMp2DByi.png)
+<center>
+<figure class="half">
+    <img src=https://cdn.jsdelivr.net/gh/hezhizheng/static-image-hosting@main/image-hosting/20211124102515_SFWJDVHPPVCYNKDO.png>
+    <img src=https://cdn.jsdelivr.net/gh/hezhizheng/static-image-hosting@main/image-hosting/20211124102515_EWYNHTWMKQRHUCDX.png>
+</figure>
+</center>
 
-## 使用安装 
+## 使用安装 (go version >= 1.18)
 ```
 # 下载
 git clone https://github.com/hezhizheng/go-movies
@@ -88,7 +103,7 @@ git clone https://github.com/hezhizheng/go-movies
 # 进入目录
 cd go-movies
 
-# 生成配置文件(默认使用redis db10的库，可自行修改app.go中的配置)
+# 配置文件(默认使用redis db10的库，可自行修改app.go中的配置)
 cp ./config/app.go.backup ./config/app.go
 
 # 配置说明
@@ -99,12 +114,13 @@ app.debug_path_name: debug的路由名称
 cron.timing_spider: 定时爬虫的CRON表达式
 ding.access_token: 钉钉机器人token
 app.spider_mod: 固定参数为 TianKongApi
+app.spider_mod: 开发模式建议设置为`true` 避免修改静态资源需要重启服务
 
 # 启动 (首次启动会自动开启爬虫任务)
 go run main.go 
 or
-# 安装 bee 工具
-bee run
+# 安装 fresh 工具
+fresh
 
 # 如安装依赖包失败，请使用代理
 export GOPROXY=https://goproxy.io,direct
@@ -116,13 +132,11 @@ http://127.0.0.1:8899
 ```
 
 ### 开启爬虫
-- 已内置定时爬虫，默认凌晨一点开启爬虫(可修改配置文件cron.timing_spider表达式)
+- 已内置定时爬虫，首次全量请求之后，每小时定时爬取最近更新的影视资源(可自行修改配置文件cron.timing_spider表达式来控制间隔)
 - 主动运行：直接访问链接 http://127.0.0.1:8899/movies-spider
 - 耗时：具体时间受目标网站/接口的响应速度影响
 
 ## Tools
-- [https://github.com/gocolly/colly](https://github.com/gocolly/colly) 爬虫框架
-- 模板引擎：https://github.com/shiyanhui/hero
 - 数据库 redis 缓存/持久 [https://github.com/Go-redis/redis](https://github.com/Go-redis/redis)
   - Zset：每个分类为一个有序集合
     - score：电影更新的时间戳
@@ -131,27 +145,19 @@ http://127.0.0.1:8899
 - 路由 [https://github.com/julienschmidt/httprouter](https://github.com/julienschmidt/httprouter)
 - json解析 jsoniter [github.com/json-iterator/go](github.com/json-iterator/go)
 - 跨平台打包：https://github.com/mitchellh/gox
-- 静态资源处理：https://github.com/rakyll/statik
 - web server 框架：https://github.com/valyala/fasthttp
+- 配置文件读取：https://github.com/spf13/viper
+- 热重启：https://github.com/gravityblast/fresh
 
-## 注意
-```
-# 修改静态文件/static  、 views/hero 需要先安装包的依赖，执行以下编译命令，更多用法可参考官方redame.md
-
-# https://github.com/rakyll/statik
-statik -src=xxxPath/go_movies/static -f 
-
-# https://github.com/shiyanhui/hero
-hero -source="./views/hero"
-```
 
 ## 编译可执行文件(跨平台)
 
 ```
 # 用法参考 https://github.com/mitchellh/gox
-# 生成文件可直接执行 Linux
-gox -osarch="linux/amd64" -ldflags "-s -w"
-......
+# 生成文件可直接执行 
+gox -osarch="windows/amd64" -ldflags "-s -w" -gcflags="all=-trimpath=${PWD}" -asmflags="all=-trimpath=${PWD}"
+gox -osarch="darwin/amd64" -ldflags "-s -w" -gcflags="all=-trimpath=${PWD}" -asmflags="all=-trimpath=${PWD}"
+gox -osarch="linux/amd64" -ldflags "-s -w" -gcflags="all=-trimpath=${PWD}" -asmflags="all=-trimpath=${PWD}"
 ```
 
 - 提供win64的已编译的文件下载 [release](https://github.com/hezhizheng/go-movies/releases)
@@ -203,8 +209,9 @@ sudo docker-compose up -d
 
 ## TODO
 - [x] 跨平台编译,模板路径不正确
-  - 使用 https://github.com/rakyll/statik 处理 js、css、image等静态资源
-  - 使用 https://github.com/shiyanhui/hero 替换 html/template 模板引擎
+  - ~~使用 https://github.com/rakyll/statik 处理 js、css、image等静态资源~~
+  - ~~使用 https://github.com/shiyanhui/hero 替换 html/template 模板引擎~~
+  - 使用 golang 1.16 embed 特性
 - [x] redis查询慢问题
   - 使用 hash 缓存页面数据
   - 使用scan 代替 keys*
@@ -213,7 +220,6 @@ sudo docker-compose up -d
 - [x] Docker 部署
 - [x] goroutine 并发数控制
   - 使用 https://github.com/panjf2000/ants
-- [ ] 爬取数据的完整性
 
 
 ## Other

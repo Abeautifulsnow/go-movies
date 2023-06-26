@@ -4,13 +4,12 @@ import (
 	"github.com/spf13/viper"
 	"go_movies/models"
 	"go_movies/utils"
-	"go_movies/utils/spider"
 	"strconv"
 	"strings"
 	"sync"
 )
 
-const paginateCacheKey  = "paginate"
+const paginateCacheKey = "paginate"
 
 type MovieListStruct struct {
 	Link      string `json:"link"`
@@ -19,6 +18,7 @@ type MovieListStruct struct {
 	Cover     string `json:"cover"`
 	UpdatedAt string `json:"updated_at"`
 	Starring  string `json:"starring"`
+	Quality   string `json:"quality"`
 }
 
 type SortMovieListStruct []MovieListStruct
@@ -40,7 +40,7 @@ func MovieListsRange(key string, start, stop int64) []MovieListStruct {
 	cacheKey := "movie_lists_key:" + key + ":start:" + sStart + ":stop:" + sStop
 	cacheHashKey := paginateCacheKey
 
-	movieList := models.FindMoviesHashFieldValue(cacheHashKey,cacheKey)
+	movieList := models.FindMoviesHashFieldValue(cacheHashKey, cacheKey)
 
 	if movieList != "" {
 		utils.Json.Unmarshal([]byte(movieList), &data)
@@ -59,6 +59,7 @@ func MovieListsRange(key string, start, stop int64) []MovieListStruct {
 		movieKeyMap.Name = info["name"]
 		movieKeyMap.Link = info["link"]
 		movieKeyMap.Cover = info["cover"]
+		movieKeyMap.Quality = info["quality"]
 		if detail["update"] != nil {
 			movieKeyMap.UpdatedAt = detail["update"].(string)
 		}
@@ -77,7 +78,7 @@ func MovieListsRange(key string, start, stop int64) []MovieListStruct {
 
 	// 这个应该是在for外面调用才对，之前居然也不报错。。。。。。
 	byteData, _ := utils.Json.MarshalIndent(data, "", " ")
-	models.SaveMoviesHash(cacheHashKey, cacheKey ,string(byteData))
+	models.SaveMoviesHash(cacheHashKey, cacheKey, string(byteData))
 
 	return data
 }
@@ -91,8 +92,8 @@ func MovieDetail(link string) map[string]interface{} {
 	defer mutex.Unlock()
 	data := make(map[string]interface{})
 
-	//details := models.FindMoviesKey("movies_detail:" + link + "*")
-	details := models.RangeSCanMoviesKey("movies_detail:" + link + "*")
+	details := models.FindMoviesKey("movies_detail:" + link + "*")
+	//details := models.RangeSCanMoviesKey("movies_detail:" + link + "*")
 
 	detail := make(map[string]string)
 	if len(details) > 0 {
@@ -101,8 +102,8 @@ func MovieDetail(link string) map[string]interface{} {
 
 	if detail["name"] == "" {
 		// 重新采集
-		detailId := TransformCategoryId(link)
-		spider.Create().PageDetail(detailId)
+		//detailId := TransformCategoryId(link)
+		//spider.Create().PageDetail(detailId)
 	}
 
 	var kuYunMap []map[string]interface{}
@@ -144,41 +145,51 @@ func MovieDetail(link string) map[string]interface{} {
 
 // 搜索影片
 func SearchMovies(key string) []MovieListStruct {
-
-	var data []MovieListStruct
-
-	var movieKeyMap MovieListStruct
+	var (
+		data     []MovieListStruct
+		wg       sync.WaitGroup
+		chanPool = make(chan int, 1000)
+	)
 
 	//movieKeys := models.FindMoviesKey("*" + ":movie_name:" + key + "*")
 	movieKeys := models.RangeSCanMoviesKey("*" + ":movie_name:" + key + "*")
 
 	for _, val := range movieKeys {
+		wg.Add(1)
+		go func(val string) {
+			chanPool <- 1
 
-		MovieDetail := MovieDetail(TransformLink(val))
+			var movieKeyMap MovieListStruct
+			MovieDetail := MovieDetail(TransformLink(val))
 
-		info := MovieDetail["info"].(map[string]string)
-		detail := MovieDetail["detail"].(map[string]interface{})
+			info := MovieDetail["info"].(map[string]string)
+			detail := MovieDetail["detail"].(map[string]interface{})
 
-		movieKeyMap.Name = info["name"]
-		movieKeyMap.Link = info["link"]
-		movieKeyMap.Cover = info["cover"]
-		if detail["update"] != nil {
-			movieKeyMap.UpdatedAt = detail["update"].(string)
-		}
-		if detail["type"] != nil {
-			movieKeyMap.Category = detail["type"].(string)
-		}
-		if detail["starring"] != nil {
-			movieKeyMap.Starring = detail["starring"].(string)
-		}
+			movieKeyMap.Name = info["name"]
+			movieKeyMap.Link = info["link"]
+			movieKeyMap.Cover = info["cover"]
+			movieKeyMap.Quality = info["quality"]
+			if detail["update"] != nil {
+				movieKeyMap.UpdatedAt = detail["update"].(string)
+			}
+			if detail["type"] != nil {
+				movieKeyMap.Category = detail["type"].(string)
+			}
+			if detail["starring"] != nil {
+				movieKeyMap.Starring = detail["starring"].(string)
+			}
 
-		mutex.Lock()
-		data = append(data, movieKeyMap)
-		mutex.Unlock()
+			mutex.Lock()
+			data = append(data, movieKeyMap)
+			mutex.Unlock()
+
+			<-chanPool
+			wg.Done()
+		}(val)
 	}
-
+	wg.Wait()
+	close(chanPool)
 	return data
-
 }
 
 // 获取实际链接url

@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/valyala/fasthttp"
 	"go_movies/utils"
+	"go_movies/utils/request"
 	"log"
 	"regexp"
 	"runtime"
@@ -106,7 +107,7 @@ func list(pg int) {
 	// 执行时间标记
 	startTime := time.Now()
 	defer ants.Release()
-	antPool, _ := ants.NewPool(1000)
+	antPool, _ := ants.NewPool(100)
 
 	//_f := initFastHttp()
 
@@ -144,20 +145,20 @@ func list(pg int) {
 
 	// 全量 done -> set done 永久Redis 标识 -> new corntab every min ( done key exist && recent_update_key expire ) -> set recent_update_key 1h expire -> do recent 3h update
 	// 一周进行一次全量爬取，资源网站的电影ID是会变的，fuck!!!
-	utils.RedisDB.SetNX("all_movies_done","done", time.Second*604800)
+	utils.RedisDB.SetNX("all_movies_done", "done", time.Second*604800)
 
 	// 钉钉通知
 	SendDingMsg("本次爬虫执行时间为：" + ExecSecondsS + "秒 \n 即" + ExecMinutesS + "分钟 \n 即" + ExecHoursS + "小时 \n " + runtime.GOOS)
 }
 
-func DoRecentUpdate()  {
+func DoRecentUpdate() {
 	allMoviesDoneKeyExists := utils.RedisDB.Exists("all_movies_done").Val()
 	recentUpdateKeyExists := utils.RedisDB.Exists("recent_update_key").Val()
 
 	if allMoviesDoneKeyExists > 0 && recentUpdateKeyExists == 0 {
 		startTime := time.Now()
 
-		utils.RedisDB.SetNX("recent_update_key","done", time.Second*3600).Err()
+		utils.RedisDB.SetNX("recent_update_key", "done", time.Second*3600).Err()
 
 		actionRecentUpdateList()
 
@@ -167,15 +168,18 @@ func DoRecentUpdate()  {
 		ExecMinutesS := strconv.FormatFloat(endTime.Minutes(), 'f', 2, 64)
 		ExecHoursS := strconv.FormatFloat(endTime.Hours(), 'f', 2, 64)
 
-		DelAllListCacheKey()
-
-		SendDingMsg("最近更新执行完成，耗时："+ ExecSecondsS + "秒 \n 即" + ExecMinutesS + "分钟 \n 即" + ExecHoursS + "小时 \n " + runtime.GOOS)
+		SendDingMsg("最近更新执行完成，耗时：" + ExecSecondsS + "秒 \n 即" + ExecMinutesS + "分钟 \n 即" + ExecHoursS + "小时 \n " + runtime.GOOS)
 	}
 }
 
 func actionRecentUpdateList() {
 	defer ants.Release()
-	antPool, _ := ants.NewPool(2000)
+	antPool, _ := ants.NewPool(100)
+
+	film := GetAssignCategoryIds("film")
+	tv := GetAssignCategoryIds("tv")
+	cartoon := GetAssignCategoryIds("cartoon")
+	saveTypes := GetIntSubCategoryIds()
 
 	pageCount := RecentUpdatePageCount(0)
 	//pageCount := 5
@@ -188,40 +192,25 @@ func actionRecentUpdateList() {
 			//log.Println("jj",j)
 			//time.Sleep(time.Second * 2)
 			//return
-			url := ApiHost + "?h=3" + "&pg=" + strconv.Itoa(j)
-			req := fasthttp.AcquireRequest()
-			req.SetConnectionClose()
-			resp := fasthttp.AcquireResponse()
-			defer func() {
-				// 用完需要释放资源
-				fasthttp.ReleaseResponse(resp)
-				fasthttp.ReleaseRequest(req)
-			}()
-
-			req.Header.SetMethod("GET")
-
-			log.Println("actionRecentUpdateList 当前page"+strconv.Itoa(j), url, pageCount)
-
-			req.SetRequestURI(url)
-
-			if err := fasthttp.Do(req, resp); err != nil {
-				log.Println("actionRecentUpdateList 请求失败:", err.Error())
+			url := ApiHost + "?h=6" + "&pg=" + strconv.Itoa(j)
+			//_, resp, gErr := getFastReqClient().Get(nil, url)
+			resp, gErr := request.IClient(request.Client).Get(&request.RequestForm{
+				Uri: url,
+			})
+			if gErr != nil {
+				log.Println("actionRecentUpdateList 请求失败:", gErr.Error())
 				return
 			}
 
-			body := resp.Body()
-
 			var nav ResData
-			err := utils.Json.Unmarshal(body, &nav)
+			err := utils.Json.Unmarshal(resp, &nav)
 			if err != nil {
-				log.Println("json 序列化错误",err)
+				log.Println("actionRecentUpdateList json 序列化错误", err)
 				return
 			}
 
 			for _, value := range nav.List {
-				// 不保存的类别 // 34,35,36,25,26,27,28,17,18,5
-				types := []int{5,17,18,33,34,37,36,39,40,41,42,43}
-				if !inType(value.TypeId,types){
+				if inType(value.TypeId, saveTypes) {
 					//log.Println("value.TypeId",value.TypeId)
 					//continue
 					// 模板时间
@@ -233,10 +222,6 @@ func actionRecentUpdateList() {
 						Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 					})
 
-					film := []int{6, 7, 8, 9, 10, 11, 12, 20, 21, 37}
-					tv := []int{13, 14, 15, 16, 22, 23, 24}
-					cartoon := []int{29, 30, 31, 32, 33}
-
 					if inType(value.TypeId, film) {
 						utils.RedisDB.ZAdd("detail_links:id:1", &redis.Z{
 							Score:  float64(stamp1.Unix()),
@@ -247,7 +232,7 @@ func actionRecentUpdateList() {
 					}
 
 					if inType(value.TypeId, tv) {
-						utils.RedisDB.ZAdd("detail_links:id:2", &redis.Z{
+						utils.RedisDB.ZAdd("detail_links:id:3", &redis.Z{
 							Score:  float64(stamp1.Unix()),
 							Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 						})
@@ -256,7 +241,7 @@ func actionRecentUpdateList() {
 					}
 
 					if inType(value.TypeId, cartoon) {
-						utils.RedisDB.ZAdd("detail_links:id:4", &redis.Z{
+						utils.RedisDB.ZAdd("detail_links:id:24", &redis.Z{
 							Score:  float64(stamp1.Unix()),
 							Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 						})
@@ -273,11 +258,16 @@ func actionRecentUpdateList() {
 			task()
 		})
 
-		if submitErr != nil{
-			log.Println("antPool submitErr：",submitErr)
+		if submitErr != nil {
+			log.Println("antPool submitErr：", submitErr)
 		}
 	}
 	wg2.Wait()
+
+	if pageCount > 0 {
+		go DelAllListCacheKey()
+	}
+
 	log.Println("all actionRecentUpdateList done")
 }
 
@@ -285,34 +275,23 @@ func RecentUpdatePageCount(retry int) int {
 	if retry >= 4 {
 		return 0
 	}
-	url := ApiHost + "?h=3&pg=1"
+	url := ApiHost + "?h=6&pg=1"
 
-	req := fasthttp.AcquireRequest()
-	req.SetConnectionClose()
-	resp := fasthttp.AcquireResponse()
-	defer func() {
-		// 用完需要释放资源
-		fasthttp.ReleaseResponse(resp)
-		fasthttp.ReleaseRequest(req)
-	}()
-
-	req.Header.SetMethod("GET")
-
-	req.SetRequestURI(url)
-
-	if err := fasthttp.Do(req, resp); err != nil {
+	//_, resp, gErr := getFastReqClient().Get(nil, url)
+	resp, gErr := request.IClient(request.Client).Get(&request.RequestForm{
+		Uri: url,
+	})
+	if gErr != nil {
 		retry++
-		log.Println("pageCount 请求失败:", retry,url, err.Error())
+		log.Println("RecentUpdatePageCount 请求失败:", retry, url, gErr.Error())
 		return RecentUpdatePageCount(retry)
-		//return 0, subCategoryId
 	}
 
-	body := resp.Body()
-
 	var nav ResData
-	err := utils.Json.Unmarshal(body, &nav)
+	err := utils.Json.Unmarshal(resp, &nav)
 	if err != nil {
-		log.Println(err,"json解析失败")
+		log.Println(err, "RecentUpdatePageCount json解析失败")
+		return 0
 	}
 
 	PageCount := nav.PageCount
@@ -320,36 +299,32 @@ func RecentUpdatePageCount(retry int) int {
 	return PageCount
 }
 
-
 func actionList(subCategoryId string, pg int, pageCount int) {
 	//return
-	req := fasthttp.AcquireRequest()
-	req.SetConnectionClose()
-	resp := fasthttp.AcquireResponse()
-	defer func() {
-		// 用完需要释放资源
-		fasthttp.ReleaseResponse(resp)
-		fasthttp.ReleaseRequest(req)
-	}()
 
-	req.Header.SetMethod("GET")
+	film := GetAssignCategoryIds("film")
+	tv := GetAssignCategoryIds("tv")
+	cartoon := GetAssignCategoryIds("cartoon")
+	saveTypes := GetIntSubCategoryIds()
 
 	for j := pg; j <= pageCount; j++ {
 		url := ApiHost + "?ac=" + AcList + "&t=" + subCategoryId + "&pg=" + strconv.Itoa(j)
 		log.Println("当前page"+strconv.Itoa(j), url, pageCount)
-		req.SetRequestURI(url)
 
-		if err := fasthttp.Do(req, resp); err != nil {
-			log.Println("actionList 请求失败:", err.Error())
+		//_, resp, gErr := getFastReqClient().Get(nil, url)
+		resp, gErr := request.IClient(request.Client).Get(&request.RequestForm{
+			Uri: url,
+		})
+		if gErr != nil {
+			log.Println("actionList 请求失败:", url, gErr.Error())
 			return
 		}
 
-		body := resp.Body()
-
 		var nav ResData
-		err := utils.Json.Unmarshal(body, &nav)
+		err := utils.Json.Unmarshal(resp, &nav)
 		if err != nil {
-			log.Println(err)
+			log.Println("actionList json 解析失败", url, err)
+			return
 		}
 
 		for _, value := range nav.List {
@@ -357,77 +332,65 @@ func actionList(subCategoryId string, pg int, pageCount int) {
 			timeTemplate := "2006-01-02 15:04:05"
 			stamp1, _ := time.ParseInLocation(timeTemplate, value.VodTime, time.Local)
 
-			utils.RedisDB.ZAdd("detail_links:id:"+strconv.Itoa(value.TypeId), &redis.Z{
-				Score:  float64(stamp1.Unix()),
-				Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
-			})
-
-			film := []int{6, 7, 8, 9, 10, 11, 12, 20, 21, 37}
-			tv := []int{13, 14, 15, 16, 22, 23, 24}
-			cartoon := []int{29, 30, 31, 32, 33}
-
-			if inType(value.TypeId, film) {
-				utils.RedisDB.ZAdd("detail_links:id:1", &redis.Z{
+			if inType(value.TypeId, saveTypes) {
+				utils.RedisDB.ZAdd("detail_links:id:"+strconv.Itoa(value.TypeId), &redis.Z{
 					Score:  float64(stamp1.Unix()),
 					Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
 				})
-				// 获取详情
-				Detail(strconv.Itoa(value.VodId), 0)
-			}
 
-			if inType(value.TypeId, tv) {
-				utils.RedisDB.ZAdd("detail_links:id:2", &redis.Z{
-					Score:  float64(stamp1.Unix()),
-					Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
-				})
-				// 获取详情
-				Detail(strconv.Itoa(value.VodId), 0)
-			}
+				if inType(value.TypeId, film) {
+					utils.RedisDB.ZAdd("detail_links:id:1", &redis.Z{
+						Score:  float64(stamp1.Unix()),
+						Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
+					})
+					// 获取详情
+					Detail(strconv.Itoa(value.VodId), 0)
+				}
 
-			if inType(value.TypeId, cartoon) {
-				utils.RedisDB.ZAdd("detail_links:id:4", &redis.Z{
-					Score:  float64(stamp1.Unix()),
-					Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
-				})
-				// 获取详情
-				Detail(strconv.Itoa(value.VodId), 0)
+				if inType(value.TypeId, tv) {
+					utils.RedisDB.ZAdd("detail_links:id:3", &redis.Z{
+						Score:  float64(stamp1.Unix()),
+						Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
+					})
+					// 获取详情
+					Detail(strconv.Itoa(value.VodId), 0)
+				}
+
+				if inType(value.TypeId, cartoon) {
+					utils.RedisDB.ZAdd("detail_links:id:24", &redis.Z{
+						Score:  float64(stamp1.Unix()),
+						Member: `/?m=vod-detail-id-` + strconv.Itoa(value.VodId) + `.html`,
+					})
+					// 获取详情
+					Detail(strconv.Itoa(value.VodId), 0)
+				}
 			}
 		}
 	}
+	return
 }
 
-func pageCount(subCategoryId string , retry int) (int, string) {
+func pageCount(subCategoryId string, retry int) (int, string) {
 	if retry >= 4 {
 		return 0, subCategoryId
 	}
 	url := ApiHost + "?ac=" + AcList + "&t=" + subCategoryId + "&pg=1"
 
-	req := fasthttp.AcquireRequest()
-	req.SetConnectionClose()
-	resp := fasthttp.AcquireResponse()
-	defer func() {
-		// 用完需要释放资源
-		fasthttp.ReleaseResponse(resp)
-		fasthttp.ReleaseRequest(req)
-	}()
-
-	req.Header.SetMethod("GET")
-
-	req.SetRequestURI(url)
-
-	if err := fasthttp.Do(req, resp); err != nil {
+	//_, resp, err := getFastReqClient().Get(nil, url)
+	resp, err := request.IClient(request.Client).Get(&request.RequestForm{
+		Uri: url,
+	})
+	if err != nil {
 		retry++
-		log.Println("pageCount 请求失败:", retry,url, err.Error())
-		return pageCount(subCategoryId,retry)
-		//return 0, subCategoryId
+		log.Println("pageCount 请求失败:", retry, url, err.Error())
+		return pageCount(subCategoryId, retry)
 	}
 
-	body := resp.Body()
-
 	var nav ResData
-	err := utils.Json.Unmarshal(body, &nav)
-	if err != nil {
-		log.Println(err)
+	jErr := utils.Json.Unmarshal(resp, &nav)
+	if jErr != nil {
+		log.Println(jErr, "pageCount json 解析失败")
+		return 0, subCategoryId
 	}
 
 	PageCount := nav.PageCount
@@ -440,51 +403,41 @@ func Detail(id string, retry int) {
 	// movies_detail:/?m=vod-detail-id-10051.html:movie_name:第102次相亲
 	url := ApiHost + "?ac=" + AcDetail + "&ids=" + id + "&pg=1"
 
-	retryMax := 3
-	if retry >= retryMax {
-		log.Println("重试已结束", url, retry)
+	//retryMax := 3
+	//if retry >= retryMax {
+	//	log.Println("重试已结束", url, retry)
+	//	return
+	//}
+
+	//_, resp, gErr := getFastReqClient().Get(nil, url)
+	resp, gErr := request.IClient(request.Client).Get(&request.RequestForm{
+		Uri: url,
+	})
+	if gErr != nil {
+		log.Println("Detail 请求失败:", gErr.Error(), url)
 		return
 	}
-
-	req := fasthttp.AcquireRequest()
-	req.SetConnectionClose()
-	resp := fasthttp.AcquireResponse()
-	defer func() {
-		// 用完需要释放资源
-		fasthttp.ReleaseResponse(resp)
-		fasthttp.ReleaseRequest(req)
-	}()
-
-	req.Header.SetMethod("GET")
-
-	req.SetRequestURI(url)
-
-	if err := fasthttp.Do(req, resp); err != nil {
-		log.Println("Detail 请求失败:", err.Error())
-		return
-	}
-
-	body := resp.Body()
 
 	var nav ResData
-	err := utils.Json.Unmarshal(body, &nav)
+	err := utils.Json.Unmarshal(resp, &nav)
 	if err != nil {
-		log.Println(err)
+		log.Println(err, "detail json 解析失败")
+		return
 	}
 
 	if len(nav.List) <= 0 {
 		log.Println("没有list", url)
 
 		// 重试
-		for {
-			if retry > retryMax {
-				log.Println("超过最大重试次数，重试机制已跳出", url, retry)
-				break
-			}
-			retry++
-			Detail(id, retry)
-			log.Println("正在重试...", url, retry)
-		}
+		//for {
+		//	if retry > retryMax {
+		//		log.Println("超过最大重试次数，重试机制已跳出", url, retry)
+		//		break
+		//	}
+		//	retry++
+		//	Detail(id, retry)
+		//	log.Println("正在重试...", url, retry)
+		//}
 
 		return
 	}
@@ -579,12 +532,14 @@ func subCategoryIds() []string {
 		utils.RedisDB.Set("categories", categoriesStr, 0).Err()
 	}
 
+	CategoryIds := make([]string, 0)
+
 	err := utils.Json.Unmarshal([]byte(categoriesStr), &nav)
 	if err != nil {
-		log.Println(err)
+		log.Println("subCategoryIds json 解析失败", err)
+		return CategoryIds
 	}
 
-	CategoryIds := make([]string, 0)
 	for _, value := range nav {
 		for _, subValue := range value.Sub {
 			Smutex.Lock()
@@ -604,7 +559,7 @@ func getCategoryPageCount() []CatePageCount {
 
 	for _, subCategoryId := range subCategoryIds {
 
-		pageCount, t := pageCount(subCategoryId,0)
+		pageCount, t := pageCount(subCategoryId, 0)
 
 		CatePageCount := CatePageCount{
 			categoryId: t,
@@ -718,4 +673,65 @@ func SendDingMsg(msg string) {
 
 func DelAllListCacheKey() {
 	utils.RedisDB.Del("paginate")
+}
+
+func GetAssignCategoryIds(_type string) []int {
+
+	ids := make([]int, 0)
+
+	var nav []Categories
+	categoriesStr := CategoriesStr()
+
+	err := utils.Json.Unmarshal([]byte(categoriesStr), &nav)
+	if err != nil {
+		log.Println("GetAssignCategoryIds json 解析失败", err)
+		return ids
+	}
+
+	film := nav[0].Sub
+	tv := nav[1].Sub
+	cartoon := nav[2].Sub
+
+	switch _type {
+	case "film":
+		for _, v := range film {
+			intId, _ := strconv.Atoi(v.TypeId)
+			ids = append(ids, intId)
+		}
+	case "tv":
+		for _, v := range tv {
+			intId, _ := strconv.Atoi(v.TypeId)
+			ids = append(ids, intId)
+		}
+	case "cartoon":
+		for _, v := range cartoon {
+			intId, _ := strconv.Atoi(v.TypeId)
+			ids = append(ids, intId)
+		}
+	}
+	return ids
+}
+
+func GetIntSubCategoryIds() []int {
+	ids := make([]int, 0)
+
+	var nav []Categories
+	categoriesStr := CategoriesStr()
+
+	err := utils.Json.Unmarshal([]byte(categoriesStr), &nav)
+	if err != nil {
+		log.Println("getIntSubCategoryIds json 解析失败", err)
+		return ids
+	}
+
+	for _, value := range nav {
+		for _, subValue := range value.Sub {
+			Smutex.Lock()
+			intId, _ := strconv.Atoi(subValue.TypeId)
+			ids = append(ids, intId)
+			Smutex.Unlock()
+		}
+	}
+
+	return ids
 }
